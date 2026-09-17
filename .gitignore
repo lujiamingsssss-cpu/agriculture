@@ -1,0 +1,49 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---- Node / Web ----
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# ---- 数据（不入库，由 fetch 脚本生成）----
+data/raw/
+data/interim/
+
+# ---- 产物 ----
+out/
+*.png
+*.jpg
+*.mp4
+*.gif
+!docs/**/*.png
+
+# ---- Blender ----
+*.blend1
+*.blend2
+
+# ---- 密钥与环境 ----
+.env
+.env.*
+!.env.example
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时 ----
+tmp/
+*.tmp
+*.log
