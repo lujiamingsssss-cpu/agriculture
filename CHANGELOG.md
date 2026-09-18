@@ -36,6 +36,9 @@
 - [T-08] LER 模块 `stripcore/ler.py` — 同时给出标准口径（面积份额加权）与附注口径（比值之和）
 - [T-08] 验收脚本 `scripts/verify_t08_ler.py` — L1–L6 判据全部通过
 - [T-08] `DESIGN.md` 附录 A 第 15 行登记：满铺水平层 → 全截获 → **LER ≈ 1.0 为已知偏离**（机制：单位面积产量与作物密度无关）
+- [T-09] 批量对比模块 `stripcore/batch.py` + 场景 `scenarios/m2n3_ns.json`、`scenarios/m4n4_ns.json`
+- [T-09] 验收脚本 `scripts/verify_t09_strip_comparison.py` — S1–S7 判据全部通过
+- [T-09] ⚠️ 实测：三个带型 LER 均为 0.9992/0.9994/0.9992，**模型几乎无法区分带型**（与附录 A 第 15 行同源），已如实记录
 
 ### Changed
 - 文档结构由 19 个文件精简为 9 个，每个文件职责单一化
