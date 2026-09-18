@@ -27,6 +27,9 @@
 - [T-03] `DESIGN.md` 附录 A.1 登记 4 条 pyhelios 使用口径（光源方向语义 / 必须禁用发射 / 散射深度 / 叶层图元选择）
 - [T-10] 剖面吸收辐射场模块 `stripcore/profile.py` — (u, w) 网格归集 + 热力图渲染（中文字体自适应、色标含单位、底部行位标尺）
 - [T-10] 出图脚本 `scripts/make_profile_figure.py` — D1–D1e 判据全部通过，输出 `out/profile_m2n4_ns.png` 与 `out/profile_m2n4_ew.png`
+- [T-06] 干物质换算模块 `stripcore/biomass.py` — RUE 法：吸收辐射 → 干物质 → 产量（逐作物）
+- [T-06] 验收脚本 `scripts/verify_t06_biomass.py` — B1–B5 判据全部通过（含单位链路逐项独立重算）
+- [T-06] `conventions.py` 新增 `to_ground_area_mj_m2()` 与 `MJ_PER_W_M2_HOUR` — 补齐 `radiation.py` 文档中声明但缺失的换算函数，`W/m² → MJ/m²` 换算自此集中唯一
 
 ### Changed
 - 文档结构由 19 个文件精简为 9 个，每个文件职责单一化

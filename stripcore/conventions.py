@@ -26,6 +26,40 @@ DEG_PER_RAD: float = 180.0 / math.pi
 RAD_PER_DEG: float = math.pi / 180.0
 """度 → 弧度。 [约定: docs/CONVENTIONS.md §5]"""
 
+SECONDS_PER_HOUR: float = 3600.0
+"""小时 → 秒。 [约定: docs/CONVENTIONS.md §5]"""
+
+J_PER_MJ: float = 1.0e6
+"""焦耳 → 兆焦。 [约定: docs/CONVENTIONS.md §5]"""
+
+MJ_PER_W_M2_HOUR: float = SECONDS_PER_HOUR / J_PER_MJ
+"""瞬时通量密度 → 单位面积能量 [MJ/(m²·h)] 的换算因子。
+
+1 W/m² 持续 1 h = 3600 J/m² = 0.0036 MJ/m²。
+[约定: docs/CONVENTIONS.md §5（辐射能量内部单位为 MJ/m²）]
+"""
+
+
+def to_ground_area_mj_m2(flux_density_w_m2: float, duration_h: float) -> float:
+    """把**瞬时**通量密度 [W/m²] 按给定时长积分成能量 [MJ/m²]。
+
+    ⚠️ `CONVENTIONS.md` §5 规定辐射能量的内部单位为 `MJ/m²`，
+    而 Helios 输出的是瞬时通量密度 `W/m²`。**所有** `W/m² → MJ/m²`
+    的换算必须经过本函数，禁止在别处散落 `0.0036` 之类的魔法数字。
+
+    ⚠️ 本函数**不隐含**任何时序假设：它只做"通量 × 时长"的代数换算。
+    把"某一时刻的瞬时通量"折算为"日累计"是一个**额外的物理假设**，
+    必须由调用方显式给出 `duration_h` 并登记该假设（见 `DESIGN.md` 附录 A）。
+
+    Args:
+        flux_density_w_m2: 瞬时通量密度 [W/m²]。
+        duration_h: 持续时长 [h]。
+
+    Returns:
+        能量 [MJ/m²]。
+    """
+    return flux_density_w_m2 * duration_h * MJ_PER_W_M2_HOUR
+
 # --------------------------------------------------------------------------
 # 世界坐标系（CONVENTIONS.md §1）
 #   x 向东为正，y 向北为正，z 垂直向上为正；角度绕 z 轴逆时针为正。

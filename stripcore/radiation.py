@@ -37,7 +37,12 @@ from dataclasses import dataclass, field
 import numpy as np
 from pyhelios import Context, RadiationModel
 
-from stripcore.conventions import profile_normal, row_unit_vector, sun_unit_vector
+from stripcore.conventions import (
+    profile_normal,
+    row_unit_vector,
+    sun_unit_vector,
+    to_ground_area_mj_m2,
+)
 from stripcore.geometry import CROP_MAIZE, CROP_SOY
 from stripcore.scenario import Scenario
 
@@ -457,6 +462,11 @@ def assert_energy_conservation(result: BandResult, tol: float = 1.02) -> None:
 def absorbed_energy_mj_m2(flux_density_w_m2: float, duration_h: float) -> float:
     """把瞬时通量密度 [W/m²] 按给定时长积分成能量 [MJ/m²]。
 
+    ⚠️ 换算的唯一实现已移到 `stripcore/conventions.py::to_ground_area_mj_m2`
+    （`CONVENTIONS.md` §5 要求换算集中于 `conventions.py`）。
+    本函数保留为**薄封装**，以免破坏既有调用点；新代码请直接用
+    `conventions.to_ground_area_mj_m2`。
+
     Args:
         flux_density_w_m2: 吸收通量密度 [W/m²]。
         duration_h: 持续时长 [h]。
@@ -464,7 +474,7 @@ def absorbed_energy_mj_m2(flux_density_w_m2: float, duration_h: float) -> float:
     Returns:
         能量 [MJ/m²]。1 W/m² × 1 h = 3600 J/m² = 0.0036 MJ/m²。
     """
-    return flux_density_w_m2 * duration_h * SECONDS_PER_HOUR / 1.0e6
+    return to_ground_area_mj_m2(flux_density_w_m2, duration_h)
 
 
 def sun_direction_consistency_check(scenario: Scenario) -> dict[str, float]:
