@@ -42,21 +42,22 @@
 
 ## 怎么跑
 
-> ⚠️ **T-01 已完成**：Python 3.11 环境与辐射模型依赖已实测跑通（见 `docs/TECH-STACK.md` §2.1）。
-> **代码骨架尚未建立**（`stripcore` 包与测试属于 T-02 之后），下列前两条命令现在可用，第三条待 T-02/T-04。
+> **已完成**：T-01（Python 3.11 环境 + 辐射模型选型 `pyhelios3d`）、T-02（最小条带场景）。
+> **进行中的验收**：D1–D5 尚未达成，见下表。
 
 ```bash
 # 环境
 uv venv && uv sync
 
-# 跑一次带型评估并出图
-uv run python -m stripcore.cli --m 2 --n 4 --band-width 2.4 --row-dir 0
+# T-02 验收：确认场景能表达"2 行高玉米 + 4 行矮大豆"
+uv run python scripts/verify_t02_scene.py
 
-# ⭐ 核心自检：南北向必须优于东西向
+# ⭐ 核心自检：南北向必须优于东西向（T-04 完成后可用）
 uv run pytest tests/test_criterion_c1.py -v
 ```
 
-详细步骤见 [`docs/TASKS.md`](docs/TASKS.md) 中的任务卡。
+场景配置文件在 `scenarios/`，格式说明见 [`scenarios/README.md`](scenarios/README.md)。
+详细任务卡见 [`docs/TASKS.md`](docs/TASKS.md)。
 
 ---
 
