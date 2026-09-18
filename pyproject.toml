@@ -12,6 +12,7 @@ dependencies = [
     # 辐射模型首选候选（T-01 实测通过）；次选 openalea-ratp 需源码构建，
     # 待选型拍板后再决定是否登记，见 docs/TECH-STACK.md §3
     "pyhelios3d>=0.1.32",
+    "matplotlib>=3.11.2",
 ]
 
 [build-system]

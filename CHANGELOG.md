@@ -25,6 +25,8 @@
 - [T-03] 冠层辐射计算模块 `stripcore/radiation.py` — PAR 波段逐层吸收辐射，分离玉米带/大豆带
 - [T-03] T-03 验收脚本 `scripts/verify_t03_radiation.py` — W1–W5 判据全部通过
 - [T-03] `DESIGN.md` 附录 A.1 登记 4 条 pyhelios 使用口径（光源方向语义 / 必须禁用发射 / 散射深度 / 叶层图元选择）
+- [T-10] 剖面吸收辐射场模块 `stripcore/profile.py` — (u, w) 网格归集 + 热力图渲染（中文字体自适应、色标含单位、底部行位标尺）
+- [T-10] 出图脚本 `scripts/make_profile_figure.py` — D1–D1e 判据全部通过，输出 `out/profile_m2n4_ns.png` 与 `out/profile_m2n4_ew.png`
 
 ### Changed
 - 文档结构由 19 个文件精简为 9 个，每个文件职责单一化

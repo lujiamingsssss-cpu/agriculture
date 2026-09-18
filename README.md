@@ -32,11 +32,11 @@
 
 ### Demo 验收（5 条，缺一不可）
 
-- [ ] **D1** 能对一个带型输出光分布剖面图
-- [ ] **D2** 切换带型，光斑肉眼可见地变化
-- [ ] **D3** 南北 vs 东西并排对比成立（核心 wow）
-- [ ] **D4** 出一个 LER 数字
-- [ ] **D5** 3 分钟录屏能放
+- [ ] **D1** 能对一个带型输出光分布剖面图 ← **已可出图**（`scripts/make_profile_figure.py`）
+- [ ] **D2** 切换带型，光斑肉眼可见地变化 ← **已可辨**（南北 vs 东西剖面格局明显不同）
+- [ ] **D3** 南北 vs 东西并排对比成立（核心 wow）← 待 T-11（两张图已生成，待并排）
+- [ ] **D4** 出一个 LER 数字 ← 待 T-06~T-08
+- [ ] **D5** 3 分钟录屏能放 ← 待 T-14
 
 ---
 
@@ -52,11 +52,21 @@ uv venv && uv sync
 # T-02 验收：确认场景能表达"2 行高玉米 + 4 行矮大豆"
 uv run python scripts/verify_t02_scene.py
 
-# ⭐ 核心自检：南北向必须优于东西向（T-04 完成后可用）
+# T-03 验收：逐层吸收辐射 + 分带（含能量守恒硬性判据）
+uv run python scripts/verify_t03_radiation.py
+
+# ⭐ T-04 验收：判据 C1（南北行向光截获 > 东西行向）
+uv run python scripts/verify_t04_criterion_c1.py
+
+# D1 出图：剖面吸收辐射热力图（南北 + 东西各一张，输出到 out/）
+uv run python scripts/make_profile_figure.py
+
+# ⭐ 核心自检：南北向必须优于东西向（同上 T-04 脚本）
 uv run pytest tests/test_criterion_c1.py -v
 ```
 
 场景配置文件在 `scenarios/`，格式说明见 [`scenarios/README.md`](scenarios/README.md)。
+出图产物写入 `out/`（已被 `.gitignore` 忽略，可随时重跑生成）。
 详细任务卡见 [`docs/TASKS.md`](docs/TASKS.md)。
 
 ---
