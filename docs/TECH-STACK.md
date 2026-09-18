@@ -216,7 +216,7 @@
 | **理由** | PowerShell 5.1 的 `Out-File -Encoding utf8` **会写入 BOM**（U+FEFF）。该字节落入提交对象后，提交标题实际是 `<U+FEFF>docs: …`。**`git log --oneline`（`%s`）会把它当空白吃掉，肉眼完全看不出来**，只有推送后才发现脏——首个提交尤其难补救 |
 | **代价** | 多一步校验 |
 | **回退** | 推送前用 `git cat-file commit HEAD` 逐字节校验：正文首字符应为 `U+0064`（`d`），且全文不含 `U+FEFF` |
-| **备注** | 撤销**已提交**的脏信息：因 root commit 无父提交，`git reset --soft HEAD~1` 会失败，须用 `git update-ref -d HEAD` 撤销后重建 |
+| **备注** | 撤销**已提交**的脏信息：因 root commit 无父提交，`git reset --soft HEAD~1` 会失败，须用 `git update-ref -d HEAD` 撤销后重建。<br>**本规则已被违反过（2026-09-18，T-03 期间）**：用 `Out-File -Encoding utf8` 写提交信息文件，PowerShell 5.1 写入 BOM，导致已推送的提交标题再次带 `U+FEFF`。处置：改用无 BOM 方式生成信息文件，`git reset --soft HEAD~1` 后重建提交，并以 `--force-with-lease` 更新远端。**教训：规则写下来不等于会遵守，提交前逐字节校验这一步不能省。** |
 
 ---
 
