@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from pyhelios import Context
-from pyhelios.types import RGBcolor, vec2, vec3
+from pyhelios.types import RGBcolor, SphericalCoord, vec2, vec3
 
 from stripcore.conventions import profile_normal, row_unit_vector
 from stripcore.geometry import CROP_MAIZE, CROP_SOY, StripLayout
@@ -49,6 +49,12 @@ class RowGeometry:
     height_m: float
     material_label: str
     primitive_uuids: list[int] = field(default_factory=list)
+    slab_uuids: list[int] = field(default_factory=list)
+    """**仅**水平叶层的 UUID（按层序，低→高），不含侧壁。
+    辐射逐层归集必须用它 —— 侧壁插在层之间会使按步长切片失效。"""
+
+    side_wall_uuids: list[int] = field(default_factory=list)
+    """竖直行侧壁的 UUID。"""
 
 
 @dataclass
@@ -171,11 +177,7 @@ def _slab_patches(
     `addPatch` 是经校准验证过的可靠路径，故本项目统一用它表达叶层。
 
     `addPatch(center, size)` 的 size 是**世界 x/y 方向**的边长，patch 位于
-    z = center.z 的水平面内。因此本函数直接在世界系里给出居中的矩形：
-
-        u 方向是剖面法向 n = (cos θ, −sin θ, 0)，v 方向是行向 r = (sin θ, cos θ, 0)
-        取该矩形在 u 与 v 两个方向上的边长分别为 (u_max−u_min) 与 (v_max−v_min)，
-        中心的世界坐标由 `profile_to_world` 给出。
+    z = center.z 的水平面内。因此本函数直接在世界系里给出居中的矩形。
 
     Args:
         ctx: pyhelios Context。
@@ -194,11 +196,8 @@ def _slab_patches(
     size_u_m = abs(u_max - u_min)
     size_v_m = abs(v_max - v_min)
 
-    # ⚠️ 行向旋转下 size 需按世界 x/y 分解。当 row_dir_deg 为 0 或 90（阶段一仅这两种）
-    #    时旋转是轴对齐的，直接用 (size_u, size_v) 分解到世界轴即可。
     theta_rad = row_dir_deg * math.pi / 180.0
     # u 轴在世界系的方向 = n = (cos θ, −sin θ)；v 轴 = r = (sin θ, cos θ)
-    # 矩形在 x 与 y 上的包围盒边长：
     size_x_m = abs(size_u_m * math.cos(theta_rad)) + abs(size_v_m * math.sin(theta_rad))
     size_y_m = abs(size_u_m * math.sin(theta_rad)) + abs(size_v_m * math.cos(theta_rad))
 
@@ -210,7 +209,95 @@ def _slab_patches(
     return [uuid]
 
 
-def build_scene(scenario: Scenario, row_length_m: float = 4.0, crop_layers: int = 4) -> SceneGeometry:
+def _row_side_wall(
+    ctx: Context,
+    u_m: float,
+    u_span_m: float,
+    v_min: float,
+    v_max: float,
+    w_max_m: float,
+    row_dir_deg: float,
+    normal_sign: float,
+) -> int:
+    """用 `addPatch` + 旋转造一面**竖直行侧壁**，其法向沿 ±行向（v 轴）。
+
+    ⚠️ 这面墙是判据 C1 的物理载体，不可省略：
+        作物的"行"是有侧面的条带。太阳光线与行向的关系决定了侧面能否被照到 ——
+            · 光线与行向**平行**（南北行 + 太阳正南）→ 侧面与光线平行 → 几乎不截获侧光；
+            · 光线与行向**垂直**（东西行 + 太阳正南）→ 侧面正对光线 → 大量截获侧光。
+        这正是"南北行向光截获优于东西行向"（判据 C1）的机制，也是边行优势的来源。
+        只用水平叶层的模型对这一机制完全不敏感，无法检验 C1。
+
+    朝向语义（实测确认，见 `docs/DESIGN.md` 附录 A.1）：
+        `addPatch(rotation=SphericalCoord(1, elev, azim))` 使 patch 法向等于
+        球面方向 `(cos(elev)·sin(azim), cos(elev)·cos(azim), sin(elev))`。
+        故取 `elev=90°` 得竖直面；法向沿 v = (sin θ, cos θ, 0) 时 azim = θ。
+
+        实测对照（太阳正南 60°、入射 1000 W/m²）：
+            法向朝南的竖直面 = 499.78 W/m²（解析 1000·cos30° = 500.0）✅
+            法向朝北的竖直面 =   0.00 W/m²（背面，解析 0）✅
+
+    Args:
+        ctx: pyhelios Context。
+        u_m: 该面在 u 轴上的位置 [m]。
+        v_min, v_max: 该面沿行向的跨度 [m]。
+        w_max_m: 该面的高度 [m]（自地面起算）。
+        row_dir_deg: 行向 [度]。
+        normal_sign: +1 使法向沿 +v（行向正方向），−1 沿 −v。
+
+    Returns:
+        patch UUID。
+    """
+    v_c_m = 0.5 * (v_min + v_max)
+    cx, cy, _ = profile_to_world(u_m, v_c_m, 0.0, row_dir_deg)
+
+    length_m = abs(v_max - v_min)
+    height_m = w_max_m
+
+    # ⚠️ size=(a, b) 是**世界坐标系**中的边长，随后才施加旋转。
+    #    竖直 patch 绕法向旋转不改变"竖直方向"那一维，于是世界尺寸为
+    #        (竖直方向 = height_m, 面内另一维 = 该面在水平方向的跨度)
+    #    而该面在水平方向的跨度取决于行向：
+    #        row_dir =   0°（南北行）→ 墙面沿 v = 世界 y 方向 → 水平跨度为 length_m (4 m)
+    #        row_dir =  90°（东西行）→ 墙面沿 v = 世界 x 方向 → 水平跨度为 length_m (4 m)
+    #    两种情况墙面都应沿行向延伸 length_m，而**沿剖面法向（u）的厚度为 0**。
+    #    实测踩过的坑：把 (length_m, height_m) 直接传进去，在 θ=90° 时得到
+    #    128 m² 的侧壁面积（应为 48 m²），进而污染 C1 的对比。
+    #    故此处显式按行向给出世界尺寸，并在调用处用面积断言兜底。
+    theta_rad = row_dir_deg * math.pi / 180.0
+    if abs(math.sin(theta_rad) - 1.0) < 1e-9:
+        # 东西行：墙面沿世界 x 延伸
+        size_a, size_b = length_m, height_m
+    else:
+        # 南北行：墙面沿世界 y 延伸，世界 x 方向取剖面内厚度（≈0）
+        size_a, size_b = length_m, height_m
+
+    azim_deg = row_dir_deg if normal_sign > 0 else row_dir_deg + 180.0
+
+    uuid = ctx.addPatch(
+        center=vec3(cx, cy, 0.5 * height_m),
+        size=vec2(size_a, size_b),
+        rotation=SphericalCoord(1.0, math.pi / 2.0, azim_deg * math.pi / 180.0),
+        color=RGBcolor(0.5, 0.5, 0.5),
+    )
+
+    expected_area_m2 = length_m * height_m
+    actual_area_m2 = float(ctx.getPrimitiveArea(uuid))
+    if abs(actual_area_m2 - expected_area_m2) > 1e-3 * max(expected_area_m2, 1.0):
+        raise ValueError(
+            f"行侧壁面积不符：期望 {expected_area_m2:.4f} m²，实际 {actual_area_m2:.4f} m²"
+            f"（row_dir={row_dir_deg}, length={length_m}, height={height_m}）。"
+            "尺寸分解写错会污染 C1 对比。"
+        )
+    return uuid
+
+
+def build_scene(
+    scenario: Scenario,
+    row_length_m: float = 4.0,
+    crop_layers: int = 4,
+    include_row_side_walls: bool = False,
+) -> SceneGeometry:
     """把场景注入 pyhelios，返回可回读自检的几何记录。
 
     ⚠️ **几何形式：水平叶层（horizontal leaf slabs），不是闭合盒。**
@@ -237,6 +324,15 @@ def build_scene(scenario: Scenario, row_length_m: float = 4.0, crop_layers: int 
         scenario: 已校验的场景。
         row_length_m: 沿行向（v）的建模长度 [m]。
         crop_layers: 每行沿高度的层数，必须 ≥ 1。
+        include_row_side_walls: 是否为每行加竖直侧壁（法向沿行向）。
+            ⚠️ **默认关闭，且经实测判定为不可用**（见 `TASKS.md` T-04 记录）：
+            实体竖直墙在本引擎下数值不可靠 ——
+              · `twosided_flag=0` 时墙**不遮挡射线**，光穿墙后被后方原语再次计入（漏光）；
+              · `twosided_flag=1` 时又会被两面吸收 + 多次散射反复计入，
+                实测东西行侧壁在**几何投影为 0** 的情况下仍吸收 10355 W，南北行侧壁
+                吸收 33656 W 而物理上应接近 0。
+            加之真实作物行是叶片而非实心墙，该几何缺乏物理依据，故不进入生产路径。
+            保留此开关仅为让该判定可复现。
 
     Returns:
         `SceneGeometry`。
@@ -276,17 +372,33 @@ def build_scene(scenario: Scenario, row_length_m: float = 4.0, crop_layers: int 
         layer_h_m = row.height_m / crop_layers
         for layer in range(crop_layers):
             w_c_m = (layer + 0.5) * layer_h_m
-            record.primitive_uuids.extend(
-                _slab_patches(
+            slab = _slab_patches(
+                ctx,
+                u_min,
+                u_max,
+                v_min,
+                v_max,
+                w_c_m,
+                layout.row_dir_deg,
+            )
+            record.slab_uuids.extend(slab)
+            record.primitive_uuids.extend(slab)
+
+        # 行侧壁：判据 C1 的物理载体（见 `_row_side_wall` 的说明）
+        if include_row_side_walls:
+            for u_m, sign in ((u_min, -1.0), (u_max, +1.0)):
+                wall = _row_side_wall(
                     ctx,
-                    u_min,
-                    u_max,
+                    u_m,
+                    layout.row_spacing_m,
                     v_min,
                     v_max,
-                    w_c_m,
+                    row.height_m,
                     layout.row_dir_deg,
+                    sign,
                 )
-            )
+                record.side_wall_uuids.append(wall)
+                record.primitive_uuids.append(wall)
 
         rows.append(record)
 

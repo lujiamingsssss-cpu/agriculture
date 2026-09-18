@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from pyhelios import Context, RadiationModel
 
-from stripcore.conventions import sun_unit_vector
+from stripcore.conventions import row_unit_vector, sun_unit_vector
 from stripcore.geometry import CROP_MAIZE, CROP_SOY
 from stripcore.scenario import Scenario
 
@@ -240,26 +240,41 @@ def run_par_radiation(
         ctx, [ground_uuid], BAND_PAR, REFLECTIVITY_GROUND_PAR, 0.0
     )
 
-    # ---- 冠层：水平叶层，单面（twosided=0）----
-    # ⚠️ 必须单面：每行每层由上下两片水平三角形组成（`_box_triangles(...,
-    # horizontal_slabs_only=True)`）。若两面都吸收，同一层会被计入两次，
-    # 实测会把冠层总吸收推到入射量的 1.21 倍（物理上不可能）。
-    # 设为单面后每层只从朝上的面吸收，与已校准的水平面口径一致。
-    maize_uuids: list[int] = []
-    soy_uuids: list[int] = []
+    # ---- 冠层：水平叶层 + 竖直行侧壁 ----
+    # 叶层：只有朝上的一面（`_slab_patches`），单面吸收。
+    # 侧壁：法向朝外；默认**双面**（twosided=1）。
+    #   ⚠️ 单面墙会漏光：Helios 的 twosided_flag=0 只禁止从背面"吸收"，
+    #      并不阻断射线，故光线会穿过墙体并被后方原语再次计入（实测侧壁贡献异常偏大）。
+    #      墙体在物理上应当遮挡，故取双面。
+    maize_slabs: list[int] = []
+    soy_slabs: list[int] = []
+    walls: list[int] = []
+    maize_walls: list[int] = []
+    soy_walls: list[int] = []
     for row in scene.rows:
-        (maize_uuids if row.crop == CROP_MAIZE else soy_uuids).extend(row.primitive_uuids)
+        is_maize = row.crop == CROP_MAIZE
+        (maize_slabs if is_maize else soy_slabs).extend(row.slab_uuids)
+        (maize_walls if is_maize else soy_walls).extend(row.side_wall_uuids)
+    walls = maize_walls + soy_walls
 
-    if maize_uuids:
+    _set_optical_properties(
+        ctx, maize_slabs, BAND_PAR, REFLECTIVITY_CANOPY_PAR, TRANSMISSIVITY_CANOPY_PAR
+    )
+    _set_optical_properties(
+        ctx, soy_slabs, BAND_PAR, REFLECTIVITY_CANOPY_PAR, TRANSMISSIVITY_CANOPY_PAR
+    )
+    if maize_slabs:
+        ctx.setPrimitiveDataUInt(maize_slabs, "twosided_flag", 0)
+    if soy_slabs:
+        ctx.setPrimitiveDataUInt(soy_slabs, "twosided_flag", 0)
+
+    if walls:
+        # ⚠️ 侧壁路径经实测判定不可用（见 `scene.build_scene` 的说明）：
+        #    单面漏光、双面重复计数。保留仅为让该结论可复现。
         _set_optical_properties(
-            ctx, maize_uuids, BAND_PAR, REFLECTIVITY_CANOPY_PAR, TRANSMISSIVITY_CANOPY_PAR
+            ctx, walls, BAND_PAR, REFLECTIVITY_CANOPY_PAR, TRANSMISSIVITY_CANOPY_PAR
         )
-        ctx.setPrimitiveDataUInt(maize_uuids, "twosided_flag", 0)
-    if soy_uuids:
-        _set_optical_properties(
-            ctx, soy_uuids, BAND_PAR, REFLECTIVITY_CANOPY_PAR, TRANSMISSIVITY_CANOPY_PAR
-        )
-        ctx.setPrimitiveDataUInt(soy_uuids, "twosided_flag", 0)
+        ctx.setPrimitiveDataUInt(walls, "twosided_flag", 0)
 
     sx, sy, sz = helios_source_direction(scenario)
     assert sz > 0.0, f"指向光源的方向必须在地平线以上（sz>0），得到 sz={sz}"
@@ -294,7 +309,9 @@ def run_par_radiation(
         for row in scene.rows:
             layer_h_m = row.height_m / crop_layers
             for layer_index in range(crop_layers):
-                uuids = row.primitive_uuids[layer_index::crop_layers]
+                # ⚠️ 必须用 `slab_uuids` 而非 `primitive_uuids[::crop_layers]`：
+                #    侧壁插在层之间，按步长切片会取错原语。
+                uuids = row.slab_uuids[layer_index : layer_index + 1]
                 if not uuids:
                     continue
                 layer_area = sum(area_by_uuid.get(u, 0.0) for u in uuids)
@@ -317,21 +334,27 @@ def run_par_radiation(
                     )
                 )
 
-    canopy_uuids = set(maize_uuids) | set(soy_uuids)
+    canopy_uuids = set(maize_slabs) | set(soy_slabs) | set(walls)
     total_canopy_power = sum(
         flux_by_uuid.get(u, 0.0) * area_by_uuid.get(u, 0.0) for u in canopy_uuids
     )
     total_canopy_area = sum(area_by_uuid.get(u, 0.0) for u in canopy_uuids)
 
     # ---- 能量守恒自检（口径正确性的守门人）----
-    # ⚠️ 冠层水平的**投影面积并集** = 计算域地面面积，而**不是**叶层面积之和。
-    #    各叶层在 u-v 平面内互相重叠（同一行的各层共享同一 u-v 单元；
-    #    玉米行在带内按行距铺满、大豆行同样铺满，故并集恰为整个计算域）。
-    #    实测反例：用面积和 38.4 m² 作分母会得到 0.4735 的假"能量不守恒"；
-    #    用并集 19.2 m² 作分母得 0.947，与 4 层单面叶层的理论值
-    #    1−(ρ+τ)^n = 1−0.15⁴ ≈ 0.9995 同量级（差额为穿透到地面的部分与漫射）。
+    # 冠层可截获功率的**几何上界** = 入射通量密度 × 冠层在光线方向的投影面积。
+    #   水平叶层的投影 = 计算域地面面积（各层在 u-v 平面重叠，并集即计算域）；
+    #   竖直侧壁的投影 = 侧壁总面积 × |光线单位向量 · 行向单位向量|
+    #                    （东西行时墙面正对太阳 → 投影大；南北行时墙面与光线平行 → 投影 ≈ 0）。
+    # ⚠️ 实测踩过的坑：早期只用地面面积作分母，未计入侧壁投影，
+    #    得到"吸收 167% 于上界"的假超界。
+    rx, ry, _ = row_unit_vector(scenario.layout.row_dir_deg)
+    sx, sy, sz = sun_unit_vector(scenario.sun.elev_deg, scenario.sun.azim_deg)
+    wall_projection_fraction = abs(rx * sx + ry * sy)
+
     projected_area_m2 = layout.n_bands * layout.band_width_m * scene.row_length_m
-    incident_on_canopy_w = incident_flux_w_m2 * projected_area_m2
+    wall_area_m2 = sum(area_by_uuid.get(u, 0.0) for u in walls)
+    intercepting_area_m2 = projected_area_m2 + wall_area_m2 * wall_projection_fraction
+    incident_on_canopy_w = incident_flux_w_m2 * intercepting_area_m2
 
     return BandResult(
         band_label=BAND_PAR,
