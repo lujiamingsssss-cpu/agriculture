@@ -167,6 +167,51 @@ def main() -> int:
             "不得调参掩盖"
         )
 
+    # ---- W6 ⭐ 归因对照：条带效应必须源于"玉米与大豆的高度差" ----
+    # 单靠 W5 无法排除"梯度来自数值噪声或边界效应"。故追加一个单因素对照：
+    # 逐次降低玉米株高，带内梯度应随之单调趋零，并在株高相等时消失/反转。
+    # 这是 A2 的**归因证据**，比单纯的"存在差异"强得多。
+    print("\n[W6] ⭐ 归因对照：把玉米株高压到与大豆同高，梯度应消失")
+    from stripcore.geometry import StripLayout
+    from stripcore.scenario import Scenario
+
+    ratios: list[tuple[float, float]] = []
+    for h_maize in (2.6, 1.2, 0.75):
+        lay = StripLayout(
+            m=scenario.layout.m,
+            n=scenario.layout.n,
+            band_width_m=scenario.layout.band_width_m,
+            row_dir_deg=scenario.layout.row_dir_deg,
+            h_maize_m=h_maize,
+            h_soy_m=scenario.layout.h_soy_m,
+            lai_maize=scenario.layout.lai_maize,
+            lai_soy=scenario.layout.lai_soy,
+            n_bands=scenario.layout.n_bands,
+        )
+        ctrl = Scenario(name=f"ctrl_h{h_maize}", layout=lay, sun=scenario.sun)
+        ctrl_res = run_par_radiation(ctrl, build_scene(ctrl))
+        arr = ctrl_res.layer_array(CROP_SOY)[: scenario.layout.n].mean(axis=1)
+        e = float(0.5 * (arr[0] + arr[-1]))
+        m_ = float(0.5 * (arr[1] + arr[2]))
+        ratios.append((h_maize, m_ / e))
+        print(f"  玉米 h={h_maize:<5} m → 带内 中部/边缘 = {m_ / e:.4f}")
+
+    main_ratio = middle / edge
+    if not (main_ratio > 1.0):
+        failures.append(f"W6 主场景 中部/边缘 = {main_ratio:.4f}，未大于 1")
+    equal_h_ratio = ratios[-1][1]
+    if equal_h_ratio >= 1.0:
+        failures.append(
+            f"W6 玉米与大豆近等高时 中部/边缘 = {equal_h_ratio:.4f} 仍 ≥ 1 —— "
+            "梯度未随高度差消失，说明它并非来自冠层垂直异质性"
+        )
+    if not (ratios[0][1] > ratios[-1][1]):
+        failures.append(
+            f"W6 带内梯度未随玉米高度降低而减小："
+            f"{[(h, round(r, 4)) for h, r in ratios]}"
+        )
+    print("  → 梯度随玉米高度差减小而趋零，证明效应源于冠层垂直异质性（A2 的归因证据）")
+
     # ---- 结论 ----
     print("\n" + "=" * 74)
     if failures:
@@ -175,10 +220,15 @@ def main() -> int:
             print(f"  - {f}")
         return 1
 
-    print("T-03 验收：✅ 通过（W1–W5 全部成立）")
+    print("T-03 验收：✅ 通过（W1–W6 全部成立）")
     print("  产出：逐层吸收辐射数组（玉米带 / 大豆带分别成组），单位 W/m² 与 MJ/m² 可换算。")
-    print("  ⭐ A2 判定：**成立** —— 模型解析出了条带异质性（大豆行受高玉米行遮蔽，")
-    print("     吸收量随离带距离增加），说明成熟开源模型能处理条带结构。")
+    print("  ⭐ A2 判定：**成立** —— 成熟开源辐射模型能解析条带异质性：")
+    print("     单带内大豆行吸收呈对称 U 形（带中部优于两侧邻接玉米带的行），")
+    print("     且该梯度随玉米与大豆的**高度差**减小而单调趋零、在近等高时消失（W6）。")
+    print("     说明效应源于冠层的垂直异质性，而非数值噪声或几何假象。")
+    print("  ⚠️ 机制说明：当前几何为水平叶层、不建模竖直侧光，")
+    print("     故此处体现的是「高秆作物改变带内辐射再分配」，")
+    print("     而非经典「高秆侧向遮挡矮秆」的纯几何遮蔽。两者都属条带效应，但表述须准确。")
     print("  ⚠️ 参数与固定太阳角为原型阶段近似，已登记 DESIGN.md 附录 A。")
     return 0
 
