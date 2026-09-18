@@ -1,0 +1,21 @@
+[project]
+name = "stripdesign"
+version = "0.0.1"
+description = "《带型》StripDesign —— 大豆玉米带状复合种植的行带结构设计与光能利用分析系统"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # 支撑库：取值依据 docs/TECH-STACK.md §2.3
+    "numpy",
+    "scipy",
+    "pvlib",
+    # 辐射模型首选候选（T-01 实测通过）；次选 openalea-ratp 需源码构建，
+    # 待选型拍板后再决定是否登记，见 docs/TECH-STACK.md §3
+    "pyhelios3d>=0.1.32",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -22,13 +22,31 @@
 
 ### 2.1 冠层辐射传输（核心）
 
-| 候选 | 语言 | 许可 | 优势 | 风险 |
-|---|---|---|---|---|
-| **PyHelios**<br>[Helios](https://github.com/plantsimulationlab/helios) · [Radiation 插件](https://plantsimulationlab.github.io/PyHelios/RadiationDoc.html) | C++ 核心 + Python 绑定 | ⚠️ 待确认（Helios 主库为 GPL-2.0） | 专为植物冠层设计；有独立 **Radiation Model Plugin**；支持异质三维场景 | 许可证需确认；C++ 依赖较重 |
-| **PyRATP**<br>[openalea/PyRATP](https://github.com/openalea/pyratp) · [HAL 论文](https://hal.inrae.fr/hal-01268592v1) | Python | ⚠️ 待确认（OpenAlea 多为 CeCILL） | **RATP 是经典冠层辐射-蒸腾-光合模型**，物理成熟；纯 Python | 年代较久，Python 3 兼容性待验证 |
-| **GroIMP**<br>[辐射模型教程](https://wiki.grogra.de/doku.php?id=tutorials:radiation-model-in-crop_model4) | Java（XL 语言） | ⚠️ 待确认 | 辐射模型成熟，有完整作物建模教程 | Java 栈，与 Python 割裂 |
-| **MAESPA** | Fortran + R | ⚠️ 待确认 | 辐射与蒸腾耦合成熟 | R 生态，集成成本高 |
-| ~~自研体素光线追踪~~ | — | — | 完全可控 | ❌ **禁止**（见决策 DR-01） |
+> **实测填写日期：2026-09-18**（T-01）。下表为实测结果，非资料摘抄。
+> 实测环境：Windows / Python 3.11.9 / uv 0.12.16 / NVIDIA RTX 5060 Laptop（driver 596.13）。
+> 「可安装」「可 import」栏是**本次实跑结论**，不是推测。
+
+| 候选 | 真实安装名 / 导入名 | 语言 | 许可 | 可安装 | 可 import | 辐射能力 | 风险 |
+|---|---|---|---|---|---|---|---|
+| **PyHelios** ⭐<br>[Helios](https://github.com/PlantSimulationLab/Helios) · [文档](https://plantsimulationlab.github.io/PyHelios/) | `pyhelios3d` / `pyhelios` | C++ 核心 + Python 绑定 | **绑定层 MIT**<br>**核心 GPL-2.0** ⚠️ | ✅ `uv add pyhelios3d`（71.8 MiB，cp311 win_amd64 官方 wheel，免编译） | ✅ `import pyhelios` = 0.1.32 | ✅ **实测通过**：`RadiationModel(ctx)` → `OptiX 8.1 backend` | 🔴 **核心 GPL-2.0 传染风险**；**辐射插件强制要求 GPU**（Vulkan 或 NVIDIA OptiX），无 GPU 机器直接不可用；内置 optix 6.5 DLL，但 OptiX 8.1 走系统驱动（driver ≥ 560） |
+| **PyRATP**<br>[openalea/pyratp](https://github.com/openalea/pyratp) · [HAL 论文](https://hal.inrae.fr/hal-01268592v1) | `openalea-ratp` / `openalea.ratp` | **Python + Fortran（f2py）**<br>（**不是"纯 Python"**） | **CeCILL-C**（宽松，类 LGPL） | ✅ 源码构建成功（meson-python + f2py，约 29 s） | ⚠️ **顶层 `openalea.ratp` 可导入**；**计算核心 `openalea.ratp.pyratp` 默认失败**（`ImportError: DLL load failed`），补 MinGW `libgfortran-5.dll` 目录后成功 | ✅ 可调用 `dir_interception` / `hemi_interception`（直射/散射截获） | 🔴 **未发布到 PyPI**（`pip install pyratp` 必然失败）；需自行解决 Fortran 运行库；依赖 MinGW gfortran |
+| **GroIMP**<br>[教程](https://wiki.grogra.de/doku.php?id=tutorials:radiation-model-in-crop_model4) | — | Java（XL 语言） | 待确认 | ❌ **T-01 跳过** | ❌ | 未实测 | 🔴 独立 Java IDE + 自有 XL 语言；与 Python 计算层割裂，阶段一集成成本远超收益 |
+| ~~MAESPA~~ | — | Fortran + R | — | ❌ 未评估 | ❌ | — | R 生态，`TECH-STACK.md` P2「Python 优先」不符 |
+| ~~自研体素光线追踪~~ | — | — | — | — | — | — | ❌ **禁止**（见决策 DR-01） |
+
+### 2.1.1 ⚠️ 两个同名陷阱（务必登记，防重复踩）
+
+| 陷阱 | 事实 |
+|---|---|
+| `pip install pyhelios` | ❌ **不是植物模型**。PyPI 的 `pyhelios` 2.2.4 是第三方 CFD 非结构网格库（作者 `jvanhare`，标签 `Computational Fluid Dynamics` / `Unstructured Mesh`，18 kB，2022-05 停更）。**植物模型真身是 `pyhelios3d`**（0.1.32，官方组织 `PlantSimulationLab`） |
+| `pip install ratp` | ❌ **是巴黎公交 API**（PyPI `ratp` 0.1，许可 Beerware），与辐射模型无关。PyRATP 的正确安装名是 **`openalea-ratp`**，且**未发布 PyPI**，只能从 GitHub 源码构建 |
+
+### 2.1.2 实测中对原记载的两处修正
+
+| 原记载 | 实测结论 |
+|---|---|
+| PyRATP 语言为「Python」、优势含「纯 Python」 | ❌ 错。含 **f2py 的 Fortran 计算核心**（`src/f90/mod_*F2PY.f90`），构建需 Fortran 编译器 |
+| 「PyHelios 许可待确认」 | ✅ 已定：绑定层 **MIT**、Helios 核心 **GPL-2.0**。**GPL 义务来自核心**，不因绑定层是 MIT 而消失 |
 
 ### 2.2 产量换算
 
@@ -62,19 +80,47 @@
 > T-01 完成后填入，并勾选下方确认项。
 
 ```
-辐射传输 = [待 T-01 确定]
+辐射传输 = pyhelios3d（首选）／ openalea.ratp（次选，待决）
 产量换算 = 自研 RUE 法
 太阳位置 = pvlib-python
 前端     = Vite + TypeScript + Three.js
 渲染     = Blender bpy（阶段二）
 ```
 
+### T-01 实测结论（2026-09-18）
+
+**结论：候选收敛为 2 个，两个都已实测"装得上 + 可调用"，但各有硬约束，选型待拍板。**
+
+| 候选 | 实测状态 | 硬约束 |
+|---|---|---|
+| **pyhelios3d** | ✅ 全绿：官方 wheel 免编译；`RadiationModel` 实测跑通 **OptiX 8.1 GPU 后端** | 🔴 Helios 核心 **GPL-2.0**；🔴 **必须有 GPU** |
+| **openalea.ratp** | ⚠️ 可用但需配置：源码构建成功；计算核心需补 `libgfortran` 目录才能导入 | 🔴 未发布 PyPI；🔴 需 MinGW Fortran 运行库 |
+
+**两候选的取舍（供决策）**
+
+| 维度 | pyhelios3d | openalea.ratp |
+|---|---|---|
+| 许可证 | 核心 **GPL-2.0**（`AGENTS.md` 第 2 节允许，但需登记） | **CeCILL-C**（宽松，P3 更优） |
+| 可复现性（P4） | ✅ 官方 wheel，一行装好 | ⚠️ 源码构建 + 运行库配置，环境较脆 |
+| 硬件依赖 | 🔴 强制 GPU（本项目演示机有 RTX 5060，但换机即失效） | ✅ 纯 CPU 即可 |
+| 物理粒度 | 三维异质冠层 + 逐行几何 → 直接对应 A2 | 湍流介质/几何混合模型，条带表达方式待 T-02 验证 |
+| 与本项目契合 | 高（逐行光截获、可出剖面） | 中（经典 RATP，二维剖面契合 DR-03） |
+
+> ⚠️ **A2 仍开放。** T-01 只证明了两者"装得上、核心可调用"，**尚未证明任何一方能正确处理条带结构**。
+> A2 的判定证据要到 **T-03**（输出逐层吸收辐射并分离玉米带/大豆带）才能取得。
+> **不得把"import 成功"表述为"A2 成立"。**
+
 **T-01 确认项**
 
-- [ ] 至少一个候选可 `import`
-- [ ] 许可证已确认并记录
-- [ ] 若为 GPL/AGPL → 已在下方「风险」标注
-- [ ] 结论已写入本节
+- [x] 至少一个候选可 `import`（**两个都通过**：`pyhelios` 0.1.32；`openalea.ratp` + 补 DLL 目录）
+- [x] 许可证已确认并记录（PyHelios 绑定 MIT / Helios 核心 GPL-2.0；PyRATP CeCILL-C）
+- [x] 若为 GPL/AGPL → 已标注风险（见 §2.1 PyHelios 行与下方）
+- [x] 结论已写入本节
+
+> 🔴 **GPL-2.0 风险标注（P3 例外登记）**：`pyhelios3d` 依赖 Helios 核心 **GPL-2.0**。
+> `AGENTS.md` 第 2 节未禁止 GPL，故**无需走 `TECH-STACK.md` 的例外流程**；但若本项目未来需以非 GPL 许可分发，
+> 该依赖构成传染风险。**阶段一为内部验证，暂接受；阶段二分发前必须重新评估**（候选替代：PyRATP / 简化剖面算法）。
+> 本项目的**自有代码**目前不含任何 GPL 派生代码，`pyhelios3d` 仅作为依赖被调用。
 
 ---
 
@@ -172,13 +218,21 @@
 
 ---
 
-## §7 依赖登记（T-01 后补全）
+## §7 依赖登记（T-01 实测后填写）
+
+> 实测环境：Windows / Python 3.11.9 / uv 0.12.16。以下版本为 `uv.lock` 实锁版本。
 
 | 依赖 | 版本 | 用途 | 许可 | 是否传染 |
 |---|---|---|---|---|
-| pvlib | 待定 | 太阳位置 | BSD-3-Clause | 否 |
-| numpy | 待定 | 数值计算 | BSD-3-Clause | 否 |
-| 辐射模型 | 待定 | 光截获 | ⚠️待确认 | ⚠️待确认 |
-| three | 待定 | 前端三维 | MIT | 否 |
+| pyhelios3d | 0.1.32 | 冠层辐射传输（首选候选） | 绑定层 MIT / **核心 GPL-2.0** | ⚠️ **核心 GPL-2.0，有传染性** |
+| openalea-ratp | 1.0.0 | 冠层辐射传输（次选候选，源码构建） | CeCILL-C | 否（类 LGPL） |
+| numpy | 2.4.6 | 数值计算 | BSD-3-Clause | 否 |
+| scipy | 1.17.1 | 数值计算 | BSD-3-Clause | 否 |
+| pvlib | 0.15.2 | 太阳位置 | BSD-3-Clause | 否 |
+| pandas | 3.0.6 | pvlib 依赖（间接） | BSD-3-Clause | 否 |
+| pyyaml | 6.0.3 | pyhelios3d 依赖（间接） | MIT | 否 |
 
 **新增依赖前必须回答**：① 现有依赖能否实现？② 许可证是什么？③ 维护状态如何？
+
+> ⚠️ **两个候选目前同时装在环境里**，因为 T-01 要求逐一实测。
+> **选型拍板后应移除落选者**，避免"两个模型算同一件事"导致结果来源不确定（违反 `AGENTS.md` 的"计算与渲染分离"精神与可复现性）。
