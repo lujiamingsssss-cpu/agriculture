@@ -79,24 +79,34 @@ class StripLayout:
     """计算域覆盖的完整带数。`CONVENTIONS.md` §3 要求 ≥ 2，以减小边界效应。"""
 
     def __post_init__(self) -> None:
-        if self.m < 1 or self.n < 1:
-            raise ValueError(f"行数必须为正整数：m={self.m}, n={self.n}")
+        # 允许 m 或 n 为 0 —— 用于**单作基准**（T-07）：
+        #   m=1, n=0 → 纯玉米单作；m=0, n=1 → 纯大豆单作。
+        #   单作基准必须走与本模型**同一条代码路径**（`DESIGN.md` §4.5），
+        #   故不能在别处另写一套单作算法，只能在此放开行数为 0。
+        if self.m < 0 or self.n < 0:
+            raise ValueError(f"行数不可为负：m={self.m}, n={self.n}")
+        if self.m == 0 and self.n == 0:
+            raise ValueError("m 与 n 不可同时为 0 —— 场景至少需要一种作物")
         if self.band_width_m <= 0.0:
             raise ValueError(f"带宽必须为正：band_width_m={self.band_width_m}")
-        if self.n_bands < 2:
+        if self.n_bands < 1:
+            raise ValueError(f"带数必须 ≥ 1，当前 n_bands={self.n_bands}")
+        # 单作基准只需 1 个带（整块地单一作物，无带间边界效应）；间作要求 ≥ 2
+        if not self.is_monoculture and self.n_bands < 2:
             raise ValueError(
-                f"计算域必须覆盖至少 2 个完整带以减小边界效应，当前 n_bands={self.n_bands}"
+                f"间作计算域必须覆盖至少 2 个完整带以减小边界效应，当前 n_bands={self.n_bands}"
                 " [约定: docs/CONVENTIONS.md §3]"
             )
-        if self.h_maize_m <= self.h_soy_m:
+        # 玉米株高须大于大豆株高 —— 仅在两者**同时存在**时才要求（条带异质性前提）
+        if self.m > 0 and self.n > 0 and self.h_maize_m <= self.h_soy_m:
             raise ValueError(
                 "玉米株高必须大于大豆株高，否则不构成条带异质冠层："
                 f"h_maize_m={self.h_maize_m}, h_soy_m={self.h_soy_m}"
             )
-        if self.lai_maize <= 0.0 or self.lai_soy <= 0.0:
-            raise ValueError(
-                f"LAI 必须为正：lai_maize={self.lai_maize}, lai_soy={self.lai_soy}"
-            )
+        if self.m > 0 and self.lai_maize <= 0.0:
+            raise ValueError(f"玉米 LAI 必须为正：lai_maize={self.lai_maize}")
+        if self.n > 0 and self.lai_soy <= 0.0:
+            raise ValueError(f"大豆 LAI 必须为正：lai_soy={self.lai_soy}")
         # 阶段一临时约束：整除时行距才等于 band_width/(m+n)
         n_rows_total = self.m + self.n
         if abs(self.row_spacing_m * n_rows_total - self.band_width_m) > 1e-9:
@@ -111,6 +121,24 @@ class StripLayout:
     def n_rows_total(self) -> int:
         """一个带内的总行数 m + n。"""
         return self.m + self.n
+
+    @property
+    def is_monoculture(self) -> bool:
+        """是否为**单作**布局（仅一种作物）。
+
+        单作用于 T-07 的 LER 基准：`m=1, n=0` 为纯玉米、`m=0, n=1` 为纯大豆。
+        基准必须走与本模型相同的代码路径（`DESIGN.md` §4.5）。
+        """
+        return self.m == 0 or self.n == 0
+
+    @property
+    def sole_crop(self) -> str | None:
+        """单作时的作物类型；间作返回 None。"""
+        if self.m > 0 and self.n == 0:
+            return CROP_MAIZE
+        if self.n > 0 and self.m == 0:
+            return CROP_SOY
+        return None
 
     @property
     def row_spacing_m(self) -> float:

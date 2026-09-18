@@ -30,6 +30,9 @@
 - [T-06] 干物质换算模块 `stripcore/biomass.py` — RUE 法：吸收辐射 → 干物质 → 产量（逐作物）
 - [T-06] 验收脚本 `scripts/verify_t06_biomass.py` — B1–B5 判据全部通过（含单位链路逐项独立重算）
 - [T-06] `conventions.py` 新增 `to_ground_area_mj_m2()` 与 `MJ_PER_W_M2_HOUR` — 补齐 `radiation.py` 文档中声明但缺失的换算函数，`W/m² → MJ/m²` 换算自此集中唯一
+- [T-07] 单作基准场景 `scenarios/mono_maize.json`（1:0）与 `scenarios/mono_soy.json`（0:1）
+- [T-07] 验收脚本 `scripts/verify_t07_monoculture.py` — B1–B5 判据全部通过
+- [T-07] `StripLayout` 放开行数为 0（`is_monoculture` / `sole_crop`），使单作基准走**同一条代码路径**
 
 ### Changed
 - 文档结构由 19 个文件精简为 9 个，每个文件职责单一化

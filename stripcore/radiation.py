@@ -206,12 +206,19 @@ def light_travel_direction(scenario: Scenario) -> tuple[float, float, float]:
     return (-sx, -sy, -sz)
 
 
-def _set_optical_properties(ctx: Context, uuids: list[int], label: str, refl: float, trans: float) -> None:
+def _set_optical_properties(
+    ctx: Context, uuids: list[int] | int, label: str, refl: float, trans: float
+) -> None:
     """给原语设置带波段后缀的光学属性。
 
     标签必须是 `reflectivity_<band>` / `transmissivity_<band>`
     （Helios 官方文档规定的命名）。吸收率由 1−ρ−τ 隐式决定。
+
+    ⚠️ **空列表直接返回**：单作场景（T-07）下某一作物的原语数为 0，
+    而 pyhelios 对空 UUID 列表会抛 `ValueError: UUIDs list cannot be empty`。
     """
+    if isinstance(uuids, list) and not uuids:
+        return
     ctx.setPrimitiveDataFloat(uuids, f"reflectivity_{label}", refl)
     ctx.setPrimitiveDataFloat(uuids, f"transmissivity_{label}", trans)
 

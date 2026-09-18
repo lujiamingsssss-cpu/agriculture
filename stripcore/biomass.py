@@ -149,8 +149,18 @@ def hi_for_crop(crop: str) -> float:
 def crop_ground_area_m2(crop: str, layout, row_length_m: float) -> float:
     """该作物的地面占地面积 [m²]。
 
-    口径：`row_spacing × row_length × 该作物的行数 × 带数`
-    （`CONVENTIONS.md` §3：每行占一个行距宽的条带）。
+    ⚠️ **口径（修正过一次）**：
+        正确口径是"该作物占的**条带宽度** × 行长 × 带数"，
+        而条带宽度 = `row_spacing × 该作物的行数`
+        （`CONVENTIONS.md` §3：每条行占一个行距宽的条带）。
+
+            area = row_spacing_m × n_rows_of_crop × row_length_m × n_bands
+
+        实测踩过的坑：曾把公式写成 `row_spacing × row_length × n_rows × n_bands`
+        而 `row_spacing = band_width/(m+n)` —— 那等于把**整个带宽**也算进去，
+        间作（带宽 2.4 m、行距 0.4 m）会**多算 2.4 倍**。
+        校验：两作物面积之和应恰等于计算域面积 `n_bands × band_width × row_length`
+        （见 `scripts/verify_t07_monoculture.py` 的 B1 判据）。
 
     Args:
         crop: 作物类型。
@@ -161,7 +171,7 @@ def crop_ground_area_m2(crop: str, layout, row_length_m: float) -> float:
         地面面积 [m²]。
 
     Raises:
-        ValueError: 未知作物类型。
+        ValueError: 未知作物类型，或该作物在本布局中不存在。
     """
     if crop == CROP_MAIZE:
         n_rows = layout.m
@@ -169,7 +179,13 @@ def crop_ground_area_m2(crop: str, layout, row_length_m: float) -> float:
         n_rows = layout.n
     else:
         raise ValueError(f"未知作物类型：{crop!r}")
-    return layout.row_spacing_m * row_length_m * n_rows * layout.n_bands
+
+    if n_rows <= 0:
+        raise ValueError(
+            f"作物 {crop!r} 在本布局中不存在（m={layout.m}, n={layout.n}），无地面面积"
+        )
+
+    return layout.row_spacing_m * n_rows * row_length_m * layout.n_bands
 
 
 def absorbed_energy_by_crop(
@@ -200,6 +216,11 @@ def absorbed_energy_by_crop(
 
     out: dict[str, tuple[float, float]] = {}
     for crop, agg in result.by_crop().items():
+        # ⚠️ 跳过"本布局中不存在"的作物：`BandResult.by_crop()` 恒返回两种作物键，
+        #    但单作场景（T-07）下某作物的面积为 0 且无任何层 —— 那不是有效作物。
+        n_rows = layout.m if crop == CROP_MAIZE else (layout.n if crop == CROP_SOY else 0)
+        if n_rows <= 0 or agg["area_m2"] <= 0.0:
+            continue
         ground_m2 = crop_ground_area_m2(crop, layout, row_length_m)
         if ground_m2 <= 0.0:
             out[crop] = (0.0, 0.0)
@@ -226,20 +247,21 @@ def compute_biomass(
             见 `EQUIVALENT_SUNSHINE_HOURS` 与 `DESIGN.md` 附录 A。
 
     Returns:
-        `BiomassResult`，玉米与大豆各自成组。
+        `BiomassResult`，按结果中实际存在的作物分组。
 
     Raises:
-        ValueError: 时长非正，或结果中缺少某个作物。
+        ValueError: 时长非正，或结果中不含任何作物。
+
+    Note:
+        **容忍缺失作物**：单作基准（T-07）场景只有一种作物，
+        故本函数按 `energy` 中实际存在的作物遍历，而不强制要求两种作物齐备。
     """
     energy = absorbed_energy_by_crop(result, layout, row_length_m, duration_h)
+    if not energy:
+        raise ValueError("辐射结果中不含任何作物，无法换算干物质")
 
     crops: dict[str, CropBiomass] = {}
-    for crop in (CROP_MAIZE, CROP_SOY):
-        if crop not in energy:
-            raise ValueError(
-                f"辐射结果中缺少作物 {crop!r} —— 场景未包含该作物，无法换算干物质"
-            )
-        flux_w_m2, energy_mj_m2 = energy[crop]
+    for crop, (flux_w_m2, energy_mj_m2) in energy.items():
         rue = rue_for_crop(crop)
         hi = hi_for_crop(crop)
 
