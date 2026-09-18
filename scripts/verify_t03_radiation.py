@@ -200,14 +200,22 @@ def main() -> int:
     if not (main_ratio > 1.0):
         failures.append(f"W6 主场景 中部/边缘 = {main_ratio:.4f}，未大于 1")
     equal_h_ratio = ratios[-1][1]
-    if equal_h_ratio >= 1.0:
+
+    # 噪声容限：近等高对照的比值本就贴近 1.0，必须留出 Monte-Carlo 抖动余量，
+    # 否则判据会随机翻面（实测踩过：direct_rays=5000 时比值在 0.9976~1.002 之间跳动，
+    # 曾导致 T-03 间歇性失败）。容限取 main 场景的重复性噪声相对量，下限 0.5%。
+    noise_rel = max(repeat_diff / max(edge, 1e-9), 0.005)
+    print(f"  W6 噪声容限（相对）= {noise_rel:.4f}")
+    if equal_h_ratio >= 1.0 + noise_rel:
         failures.append(
-            f"W6 玉米与大豆近等高时 中部/边缘 = {equal_h_ratio:.4f} 仍 ≥ 1 —— "
-            "梯度未随高度差消失，说明它并非来自冠层垂直异质性"
+            f"W6 玉米与大豆近等高时 中部/边缘 = {equal_h_ratio:.4f} ≥ 1+容限({1.0 + noise_rel:.4f}) "
+            "—— 梯度未随高度差消失，说明它并非来自冠层垂直异质性"
         )
-    if not (ratios[0][1] > ratios[-1][1]):
+    elif equal_h_ratio >= 1.0:
+        print(f"  （近等高比值 {equal_h_ratio:.4f} 略 ≥1 但在噪声容限 {noise_rel:.4f} 内，视为消失）")
+    if not (ratios[0][1] > ratios[-1][1] + noise_rel * 0.25):
         failures.append(
-            f"W6 带内梯度未随玉米高度降低而减小："
+            f"W6 带内梯度未随玉米高度降低而显著减小："
             f"{[(h, round(r, 4)) for h, r in ratios]}"
         )
     print("  → 梯度随玉米高度差减小而趋零，证明效应源于冠层垂直异质性（A2 的归因证据）")
