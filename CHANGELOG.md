@@ -39,8 +39,36 @@
 - [T-09] 批量对比模块 `stripcore/batch.py` + 场景 `scenarios/m2n3_ns.json`、`scenarios/m4n4_ns.json`
 - [T-09] 验收脚本 `scripts/verify_t09_strip_comparison.py` — S1–S7 判据全部通过
 - [T-09] ⚠️ 实测：三个带型 LER 均为 0.9992/0.9994/0.9992，**模型几乎无法区分带型**（与附录 A 第 15 行同源），已如实记录
+- `docs/DEMO-HANDOVER.md` 演示交接：交付物清单、**工具定位**（行向与光分配探索器）、核心数值、互动组件清单、时间滑块边界、已知边界、运行环境、三维渲染纪律、为何不用 MCP
+- `docs/DEMO-HANDOVER.md` §10 提交与推送卫生**完整清单**（提交前 6 条门禁、Conventional Commits 格式、BOM 字节级校验实操、单向门、禁止入库清单、已发生事故留档、推送纪律）
+- `docs/TASKS.md` §1 **当前位置**（一眼看懂：已完成 T-00~T-10，停在 T-11 之前）
+- `docs/TASKS.md` §2 **路线图** + 两个决策点 D-a（输入轴改为时间/行向/地点/日期）、D-b（工具定位）
+- `docs/TASKS.md` §3 **问题 ↔ 方案绑定表**（P1–P10，含"什么情况下会返修"）
+- `docs/TASKS.md` 新增任务 **T-17 三维渲染（Blender headless）**、**T-18 交互演示工具（时间滑块 + 行向开关 + 地点/日期）**
+- `docs/TECH-STACK.md` DR-08 **阶段一交互工具用 Streamlit**（论证这不属于"阶段二前端提前"）
+- `docs/TECH-STACK.md` DR-09 **三维走 Blender headless**，砍掉 Web 三维页面；配三条渲染硬约束
+- `docs/TECH-STACK.md` §7 新增 streamlit（待安装）与 Blender 5.2.0（外部工具）登记
 
 ### Changed
+- ⭐ **`BASELINE.md` §3.1 与判据 D2 修订**：输入轴由"拖动滑块**切换带型**"改为"切换**时间与行向**"（带型参数实测无响应，时间信号强 244×）
+- ⭐ **输入轴由"带型参数"改为"时间 + 行向 + 地点 + 日期"** — 实测行比/带宽/株高/LAI 对结果几乎无影响（≤1%），而时间维度信号强度约为带型信号的 **244 倍**
+- ⭐ **工具定位锁定为「行向与光分配探索器」**，不再是"带型推荐器"；界面不得把无响应参数做成控件
+- `docs/TASKS.md` 由 **535 行压缩至约 300 行**：删除重复的「当前任务」节、T-04 的 260 行长篇过程叙事、重复编号与自相矛盾的状态行；历史细节按"知识归口"移入 `DESIGN.md` 附录 A.2
+- `AGENTS.md` 由 130 行压缩至 **113 行**（回到自定的 120 行上限内）；新增 §6.1 提交与推送卫生；§7 文档地图补入 `DEMO-HANDOVER.md`；§5 明确"阶段一不建前端工程"
+- `docs/DESIGN.md` 附录 A 第 **8、9 行订正**：原文写"这是判据 C1 无法通过的根因"，已被 T-04 实测（C1 成立，+0.99%）推翻；真实影响是**无法体现侧向受光**
+- `docs/DESIGN.md` 附录 A 第 3 行更新：太阳位置改由 `pvlib` 按"地点+日期"实时给出（日累计仍属阶段二）
+- `docs/DESIGN.md` 附录 A 新增第 **16 行**（行比/带宽/株高/LAI 不响应）、第 **17 行**（`row_dir_deg` 只允许 0°/90°，连续角度能量守恒失效 1.19~2.80）
+- `docs/TECH-STACK.md` DR-07 订正：原文写"Helios 不承担 C1 验证"，已被 T-04 推翻（C1 在 Helios 下成立）
+- `docs/TECH-STACK.md` §3 选型结论与 §6 答辩素材同步更新（新增 Streamlit / 三维 / 行向两档 / 无响应参数四问）
+- `README.md` 重写"当前状态"与"怎么跑"：D1/D2/D4 状态订正（D4 已完成）、补入**定位声明**与核心数字、逐个列出 7 个验收脚本
+- `README.md` 删除不存在的 `tests/test_criterion_c1.py` 命令（仓库无 `tests/` 目录）
+
+### Fixed
+- 修复三处**文档自相矛盾**：`TASKS.md` 同时存在两个「当前任务」节并互相打架；T-04 卡片标题写"当前不通过"而正文写"已通过"；`DESIGN.md`/`TECH-STACK.md` 仍称"判据 C1 无法通过"
+- 修复 `README.md` 中"LER 待 T-06~T-08"的过期状态（该三项已完成）
+
+### Removed
+- 移除 `docs/governance/`、`docs/baseline/`、`docs/explanation/`、`docs/reference/`、`docs/tutorials/`、`docs/adr/` 等分层目录，内容并入现有文件
 - 文档结构由 19 个文件精简为 9 个，每个文件职责单一化
 - [T-01] `TECH-STACK.md` §2.1 候选表由"资料摘抄"改为"实测结果"，并修正两处原记载错误（PyRATP 含 Fortran 核心，非"纯 Python"；PyHelios 许可定为核心 GPL-2.0 / 绑定 MIT）
 - [T-01] `TECH-STACK.md` §3、§7 由"待 T-01 确定"填入实测结论与依赖登记
