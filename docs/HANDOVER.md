@@ -44,6 +44,22 @@
 > ⚠️ **最容易出错的一步**：如果先 commit 再改身份，第一条提交的作者会永远显示为"你的名字"。
 > 所以命令顺序是：**先设身份 → 再 init → 再 commit**。
 
+### 2.1 实测补充：写全局配置在受限环境中会被拒（2026-09-18）
+
+§3 第 1 步用 `git config --global` 写 `~/.gitconfig`，该文件**在工作区之外**。
+在受限执行环境（如 AI 代理的沙箱）中这一步会被拒绝：
+
+```
+error: could not lock config file C:/Users/HUGO/.gitconfig: Permission denied
+```
+
+| 项 | 说明 |
+|---|---|
+| **影响面** | 🔵 **仅限受限执行环境（含 AI 代理沙箱）**；人类开发者在本机执行不会遇到。**不要记成"git config 不可用"** |
+| **危险之处** | 写入失败时错误只出现在 **stderr**，退出码为 `255`（实测）；而随后的 `git config --global user.name` **回显的仍是旧占位符**。错误信息与回显被一起忽略时，会误以为已设置成功 |
+| **确认方法** | 必须两个条件同时满足：`git config --global user.name` 输出 `lujiamingsssss-cpu`，**且**该命令退出码为 `0`。只看回显不看退出码不算通过 |
+| **回退方案** | 无写权限时改为仓库级 `git config user.name …` / `git config user.email …`。作者归属同样正确，但**不满足 §6 第 1、2 条判据**，且换仓库需重设 |
+
 ---
 
 ## §3 开工第一步：命令序列
