@@ -22,6 +22,9 @@
 - [T-02] 建立 `stripcore` 计算层骨架 — `conventions.py`（坐标系/单位落地）、`geometry.py`（条带布局）、`scenario.py`（配置加载校验）、`scene.py`（注入 pyhelios 几何）
 - [T-02] 最小条带场景配置 `scenarios/m2n4_ns.json` — 2:4 / 带宽 2.4 m / 南北行向 / 固定太阳角 60°-180°
 - [T-02] T-02 验收脚本 `scripts/verify_t02_scene.py` — V1–V4 判据全部通过（回读 12 行几何：4 行玉米 @2.600 m、8 行大豆 @0.700 m）
+- [T-03] 冠层辐射计算模块 `stripcore/radiation.py` — PAR 波段逐层吸收辐射，分离玉米带/大豆带
+- [T-03] T-03 验收脚本 `scripts/verify_t03_radiation.py` — W1–W5 判据全部通过
+- [T-03] `DESIGN.md` 附录 A.1 登记 4 条 pyhelios 使用口径（光源方向语义 / 必须禁用发射 / 散射深度 / 叶层图元选择）
 
 ### Changed
 - 文档结构由 19 个文件精简为 9 个，每个文件职责单一化
@@ -30,6 +33,9 @@
 - [T-02] **辐射传输选定 `pyhelios3d`**，`openalea.ratp` 降为已记录备选（触发条件：无 GPU 环境或需非 GPL 分发）；备选已从环境移除
 - [T-02] `DESIGN.md` 附录 A 登记 5 条临时近似（待核实参数 / 固定太阳角 / 长方体冠层近似 / 带宽整除约束）
 - [T-02] `pyproject.toml` 增加 hatchling 打包配置，使 `stripcore` 可被导入
+- [T-03] ⭐ **假设 A2 判定为成立** — 成熟开源辐射模型能解析条带异质性（单带内大豆行呈对称 U 形，中部 231.27 > 边缘 228.90 W/m²，极差 4.835 超出重复性噪声 2.895）
+- [T-03] `stripcore/scene.py` 冠层几何由**闭盒三角网格**改为 **`addPatch` 水平叶层**（实测竖直面在 OptiX 下几乎不沉积辐射能：单盒 1904 W vs 解析 2426 W）
+- [T-03] `DESIGN.md` 附录 A 第 4 行更新为水平叶层描述，并新增第 6、7 行（单面口径 / 截获量分母）
 
 ### Removed
 - 移除 `docs/governance/`、`docs/baseline/`、`docs/explanation/`、`docs/reference/`、`docs/tutorials/`、`docs/adr/` 等分层目录，内容并入现有文件

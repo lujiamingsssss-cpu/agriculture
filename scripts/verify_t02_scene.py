@@ -50,11 +50,11 @@ def main() -> int:
     scene = build_scene(scenario)
     report = measured_row_report(scene, scenario)
     print(f"\n[pyhelios] 注入完成：行数 {len(scene.rows)}，原语数 {scene.total_primitives}")
-    print(f"{'行':>3} {'作物':<6} {'期望u':>8}  {'实测u占位':<20} {'实测顶高':>8}")
+    print(f"{'行':>3} {'作物':<6} {'期望u':>8} {'实测u中心':>9}  {'实测顶高':>8}")
     for item in report:
         print(
-            f"{item['row_index']:>3} {item['crop']:<6} {item['expected_u_m']:>8.3f}  "
-            f"{item['measured_u_span_m']:<20} {item['measured_top_m']:>8.3f}"
+            f"{item['row_index']:>3} {item['crop']:<6} {item['expected_u_m']:>8.3f} "
+            f"{item['measured_u_center_m']:>9.3f}  {item['measured_top_m']:>8.3f}"
         )
 
     # ---- V2 实测高度 ----------------------------------------------------
@@ -76,20 +76,14 @@ def main() -> int:
         failures.append("V2 玉米未严格高于大豆，未构成条带异质冠层")
 
     # ---- V3 行位 --------------------------------------------------------
-    print("\n[V3] 行 u 占位与 CONVENTIONS §3 对齐")
-    half_spacing = layout.row_spacing_m / 2.0
+    print("\n[V3] 行中心 u 与 CONVENTIONS §3 对齐")
     for row, item in zip(scene.rows, report, strict=True):
-        lo = row.u_center_m - half_spacing
-        hi = row.u_center_m + half_spacing
-        parsed = item["measured_u_span_m"].strip("[]").split(", ")
-        got_lo, got_hi = float(parsed[0]), float(parsed[1])
-        ok = abs(got_lo - lo) < 1e-3 and abs(got_hi - hi) < 1e-3
-        if not ok:
+        got = item["measured_u_center_m"]
+        if abs(float(got) - row.u_center_m) > 1e-3:
             failures.append(
-                f"V3 行{row.row_index} u 占位不符：实测 [{got_lo:.3f}, {got_hi:.3f}]，"
-                f"期望 [{lo:.3f}, {hi:.3f}]"
+                f"V3 行{row.row_index} u 中心不符：实测 {got}，期望 {row.u_center_m}"
             )
-    print(f"  已逐行核对 {len(scene.rows)} 行（容差 1e-3 m）")
+    print(f"  已逐行核对 {len(scene.rows)} 行行中心（容差 1e-3 m）")
 
     # ---- V4 光线几何 ----------------------------------------------------
     print("\n[V4] 剖面内光线自检（对照 CONVENTIONS §4.5/§4.6）")
