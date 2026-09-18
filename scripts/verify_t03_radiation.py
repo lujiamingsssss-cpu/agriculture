@@ -28,6 +28,7 @@ from stripcore.radiation import (
     BAND_PAR,
     PAR_INCIDENT_W_M2,
     absorbed_energy_mj_m2,
+    assert_energy_conservation,
     run_par_radiation,
     sun_direction_consistency_check,
 )
@@ -117,6 +118,19 @@ def main() -> int:
         )
     print(f"  注：计算域地面入射 = {result.incident_flux_w_m2 * result.domain_ground_area_m2:.2f} W，"
           "该值不能作为分母（冠层投影面积大于地面面积）")
+
+    # ---- W4b ⭐ 硬性能量守恒（必须显式通过，否则任何对比都不可信）----
+    print("\n[W4b] ⭐ 硬性能量守恒自检（全部原语：冠层 + 地面）")
+    print(f"  周期边界 = {result.periodic!r}")
+    print(f"  全部原语吸收 = {result.total_absorbed_all_w:.2f} W")
+    print(f"  入射总能量（计算域地面口径） = "
+          f"{result.incident_flux_w_m2 * result.domain_ground_area_m2:.2f} W")
+    print(f"  吸收/入射 = {result.energy_ratio_all:.4f}（必须 ≤ 1）")
+    try:
+        assert_energy_conservation(result)
+        print("  ✅ 守恒成立")
+    except AssertionError as exc:
+        failures.append(f"W4b {exc}")
 
     # ---- W5 ⭐ A2 的直接证据：条带异质性 ----
     print("\n[W5] ⭐ 条带结构可分辨性（A2 的直接证据）")

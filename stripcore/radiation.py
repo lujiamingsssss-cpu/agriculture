@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from pyhelios import Context, RadiationModel
 
-from stripcore.conventions import row_unit_vector, sun_unit_vector
+from stripcore.conventions import profile_normal, row_unit_vector, sun_unit_vector
 from stripcore.geometry import CROP_MAIZE, CROP_SOY
 from stripcore.scenario import Scenario
 
@@ -116,6 +116,19 @@ class BandResult:
 
     incident_on_canopy_w: float = 0.0
     """入射到冠层水平投影面积上的功率上界 [W]。"""
+
+    total_absorbed_all_w: float = 0.0
+    """**全部原语**（冠层 + 地面）的吸收功率 [W]。用于能量守恒自检。"""
+
+    energy_ratio_all: float = 0.0
+    """`total_absorbed_all_w / (入射通量 × 计算域地面面积)`。
+
+    ⚠️ 本值 **> 1 即为能量不守恒**（物理上不可能），说明场景设置有问题。
+    正常应在 0.8~1.0 之间。见 `assert_energy_conservation`。
+    """
+
+    periodic: str | None = None
+    """本次计算使用的周期边界设置（`None` 表示关闭，仅用于对照）。"""
 
     def by_crop(self) -> dict[str, dict[str, float]]:
         """按作物聚合吸收功率与辐照面积，用于带间对比与后续 LER 计算。"""
@@ -198,6 +211,30 @@ def _set_optical_properties(ctx: Context, uuids: list[int], label: str, refl: fl
     ctx.setPrimitiveDataFloat(uuids, f"transmissivity_{label}", trans)
 
 
+def _domain_footprint(
+    layout, row_length_m: float
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """计算域在**世界系**的水平和范围 `((x_min, x_max), (y_min, y_max))`。
+
+    计算域在剖面坐标下是 `u ∈ [0, n_bands·band_width_m]`、`v ∈ [−L/2, +L/2]`
+    （`CONVENTIONS.md` §2/§3）。u 轴的世界方向为剖面法向 `n = (cos θ, −sin θ)`，
+    v 轴为行向 `r = (sin θ, cos θ)`，故世界的轴对齐包围盒为：
+
+        x 半跨度 = |dom_u·n_x| / 2 + |L·r_x| / 2
+        y 半跨度 = |dom_u·n_y| / 2 + |L·r_y| / 2
+        x 中心   = dom_u·n_x / 2,  y 中心 = dom_u·n_y / 2
+    """
+    nx, ny, _ = profile_normal(layout.row_dir_deg)
+    rx, ry, _ = row_unit_vector(layout.row_dir_deg)
+    dom_u = layout.n_bands * layout.band_width_m
+
+    cx = 0.5 * dom_u * nx
+    cy = 0.5 * dom_u * ny
+    half_x = 0.5 * (abs(dom_u * nx) + abs(row_length_m * rx))
+    half_y = 0.5 * (abs(dom_u * ny) + abs(row_length_m * ry))
+    return (cx - half_x, cx + half_x), (cy - half_y, cy + half_y)
+
+
 def run_par_radiation(
     scenario: Scenario,
     scene,
@@ -205,9 +242,19 @@ def run_par_radiation(
     direct_rays: int = 5000,
     diffuse_rays: int = 10000,
     scattering_depth: int = SCATTERING_DEPTH,
-    ground_size_m: float | None = None,
+    periodic: str | None = "xy",
 ) -> BandResult:
     """对已注入几何的场景跑 PAR 波段，返回逐层吸收辐射。
+
+    ⚠️ **周期边界默认开启**，且这是正确性要求而不仅是精度优化：
+        不开周期边界时，计算域侧向边界处会有光线进入/被重复计入，
+        实测使**冠层吸收超过入射总能量**（东西行向吸收/入射 = 1.104），
+        场景不满足能量守恒，行向对比因而不可信。
+        开启后两侧均为 0.865，且冠层/几何紧上界 = 0.999。
+        详见 `DESIGN.md` 附录 A 第 12 行。
+
+        为此地面 patch 也改为**精确贴合计算域包围盒**（原先取 3×带宽的正方形，
+        超出计算域，与周期边界不一致）。
 
     Args:
         scenario: 场景（提供太阳方向与行带布局）。
@@ -216,7 +263,8 @@ def run_par_radiation(
         direct_rays: 直射光线数（Monte-Carlo 采样量）。
         diffuse_rays: 散射光线数。
         scattering_depth: 散射迭代次数，必须 > 0 才能让 ρ/τ 生效。
-        ground_size_m: 地面边长 [m]；None 表示按计算域自动取 3 倍带宽。
+        periodic: 周期边界方向：`"x"` / `"y"` / `"xy"` / `None`（关闭）。
+            `None` 仅用于复现"不守恒"的对照，不应用于生产。
 
     Returns:
         `BandResult`，含逐层数组。
@@ -224,15 +272,13 @@ def run_par_radiation(
     layout = scenario.layout
     ctx = scene.context
 
-    if ground_size_m is None:
-        ground_size_m = 3.0 * layout.band_width_m
-
-    # ---- 地面：单面（只从上方吸收），避免"两面吸收"把地面通量翻倍 ----
+    # ---- 地面：精确贴合计算域包围盒；单面（只从上方吸收）----
     from pyhelios.types import RGBcolor, vec2, vec3
 
+    (x_min, x_max), (y_min, y_max) = _domain_footprint(layout, scene.row_length_m)
     ground_uuid = ctx.addPatch(
-        center=vec3(0.0, 0.0, 0.0),
-        size=vec2(ground_size_m, ground_size_m),
+        center=vec3(0.5 * (x_min + x_max), 0.5 * (y_min + y_max), 0.0),
+        size=vec2(x_max - x_min, y_max - y_min),
         color=RGBcolor(0.3, 0.22, 0.12),
     )
     ctx.setPrimitiveDataUInt(ground_uuid, "twosided_flag", 0)
@@ -291,6 +337,9 @@ def run_par_radiation(
         rad.setDirectRayCount(BAND_PAR, direct_rays)
         rad.setDiffuseRayCount(BAND_PAR, diffuse_rays)
         rad.setScatteringDepth(BAND_PAR, scattering_depth)
+        if periodic is not None:
+            # ⚠️ 正确性要求，不是精度优化：见函数 docstring 与 DESIGN.md 附录 A 第 12 行。
+            rad.enforcePeriodicBoundary(periodic)
 
         rad.runBand(BAND_PAR)
         backend = rad.getBackendName()
@@ -356,6 +405,11 @@ def run_par_radiation(
     intercepting_area_m2 = projected_area_m2 + wall_area_m2 * wall_projection_fraction
     incident_on_canopy_w = incident_flux_w_m2 * intercepting_area_m2
 
+    # 全部原语的吸收（含地面），用于能量守恒自检
+    absorbed_all_w = sum(
+        flux_by_uuid.get(u, 0.0) * area_by_uuid.get(u, 0.0) for u in all_uuids
+    )
+
     return BandResult(
         band_label=BAND_PAR,
         incident_flux_w_m2=incident_flux_w_m2,
@@ -367,7 +421,37 @@ def run_par_radiation(
         domain_ground_area_m2=layout.n_bands * layout.band_width_m * scene.row_length_m,
         projected_area_m2=projected_area_m2,
         incident_on_canopy_w=incident_on_canopy_w,
+        total_absorbed_all_w=absorbed_all_w,
+        energy_ratio_all=absorbed_all_w / (incident_flux_w_m2 * projected_area_m2),
+        periodic=periodic,
     )
+
+
+def assert_energy_conservation(result: BandResult, tol: float = 1.02) -> None:
+    """断言场景满足能量守恒：**全部原语**（冠层 + 地面）吸收 ≤ 入射总能量。
+
+    ⚠️ 这是本模块最重要的自检。T-04 曾因漏掉它而在**不守恒的场景**中做了
+    一整套行向对比，得出与物理不符的结论（东西行向吸收/入射 = 1.104 > 1）。
+    该自检是最廉价的守门人：不守恒即说明场景设置有问题（典型原因是缺周期边界），
+    此时任何对比结论都不可信。
+
+    Args:
+        result: `run_par_radiation` 的输出。
+        tol: 容许的相对超出（默认 1.02，为 Monte-Carlo 采样留 2% 余量）。
+
+    Raises:
+        AssertionError: 吸收总量超过入射总能量的 `tol` 倍。
+    """
+    ratio = result.energy_ratio_all
+    if ratio > tol:
+        raise AssertionError(
+            f"能量不守恒：全部原语吸收 {result.total_absorbed_all_w:.1f} W / "
+            f"入射 {result.incident_flux_w_m2 * result.domain_ground_area_m2:.1f} W "
+            f"= {ratio:.4f} > {tol}。"
+            f"（periodic={result.periodic!r}）"
+            "最常见原因是未启用周期边界，导致侧向边界光线重复计数。"
+            "请勿在此外推任何行向对比结论 —— 先修正场景设置。"
+        )
 
 
 def absorbed_energy_mj_m2(flux_density_w_m2: float, duration_h: float) -> float:

@@ -137,16 +137,37 @@ def main() -> int:
 
     # ---- C1d 效果量 ----
     print("\n[C1d] 效果量")
+    rel = float("nan")
     if a_ew > 0:
         rel = (a_ns - a_ew) / a_ew
         print(f"  南北相对东西的优势 = {rel:+.4%}")
-        if 0 < rel < 1e-6:
-            failures.append(
-                f"C1d 优势仅 {rel:.2e}，处于数值噪声量级，不足以断言'严格大于'"
-            )
     else:
         print("  东西向吸收为 0，无法计算相对差")
         failures.append("C1d 东西向吸收为 0，结果不可信")
+
+    # ---- C1f ⭐ 可复现性：优势必须显著超出 Monte-Carlo 重复性散布 ----
+    # 验收标准②要求"效果量超出数值噪声"。仅打印优势不够，必须实测其重复性。
+    print("\n[C1f] ⭐ 可复现性（优势是否超出数值噪声）")
+    repeats = []
+    for i in range(3):
+        r_ns = measure("m2n4_ns")["total_absorbed_w"]
+        r_ew = measure("m2n4_ew")["total_absorbed_w"]
+        rel_i = (float(r_ns) - float(r_ew)) / float(r_ew)
+        repeats.append(rel_i)
+        print(f"  重复 {i + 1}: 相对差 = {rel_i:+.4%}")
+    spread = max(repeats) - min(repeats)
+    mean_rel = sum(repeats) / len(repeats)
+    print(f"  均值 = {mean_rel:+.4%}   散布 = {spread:.4%}   信噪比 = "
+          f"{abs(mean_rel) / spread if spread > 0 else float('inf'):.1f}×")
+    if any(r <= 0 for r in repeats):
+        failures.append(
+            f"C1f 重复实验中出现非正优势（{['%.4f' % r for r in repeats]}），符号不稳定"
+        )
+    if spread >= abs(mean_rel):
+        failures.append(
+            f"C1f 散布 {spread:.4%} ≥ 优势均值 {abs(mean_rel):.4%}，"
+            "效果量未超出数值噪声，不足以断言'严格大于'"
+        )
 
     # ---- 结论 ----
     print("\n" + "=" * 76)
@@ -158,9 +179,14 @@ def main() -> int:
         print("     按 §4 逐项核对坐标系与投影，**禁止通过调参掩盖**。")
         return 1
 
-    print("T-04 验收：✅ 通过（C1a–C1e 全部成立）")
+    print("T-04 验收：✅ 通过（C1a–C1f 全部成立）")
     print(f"  ⭐ 判据 C1 成立：南北向光截获 {a_ns:.1f} W > 东西向 {a_ew:.1f} W"
-          f"（优势 {(a_ns - a_ew) / a_ew:+.2%}）")
+          f"（优势 {(a_ns - a_ew) / a_ew:+.2%}，信噪比 {abs(mean_rel) / spread if spread > 0 else float('inf'):.0f}×）")
+    print("  ⚠️ 优势虽小（约 1%），但可复现且信噪比高；其**物理实质是带间再分配**：")
+    print("     南北行向下大豆多获光、东西行向下玉米多获光（见下方分带数值）。")
+    print("     总量差异之所以小，是因为总截获受几何上界约束（两者都接近完全截获）。")
+    print("  ⚠️ 前提：本结论依赖**周期边界已启用**（`periodic='xy'`）。")
+    print("     未启用时场景能量不守恒（吸收/入射 > 1），对比无意义 —— 见 DESIGN.md 附录 A 第 12 行。")
     print("  这是阶段一的第一个 checkpoint，通过后 CONVENTIONS.md 不得再改。")
     print("  ⚠️ 参数与固定太阳角为原型阶段近似，已登记 DESIGN.md 附录 A。")
     return 0
