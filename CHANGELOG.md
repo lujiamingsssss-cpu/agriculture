@@ -33,6 +33,9 @@
 - [T-07] 单作基准场景 `scenarios/mono_maize.json`（1:0）与 `scenarios/mono_soy.json`（0:1）
 - [T-07] 验收脚本 `scripts/verify_t07_monoculture.py` — B1–B5 判据全部通过
 - [T-07] `StripLayout` 放开行数为 0（`is_monoculture` / `sole_crop`），使单作基准走**同一条代码路径**
+- [T-08] LER 模块 `stripcore/ler.py` — 同时给出标准口径（面积份额加权）与附注口径（比值之和）
+- [T-08] 验收脚本 `scripts/verify_t08_ler.py` — L1–L6 判据全部通过
+- [T-08] `DESIGN.md` 附录 A 第 15 行登记：满铺水平层 → 全截获 → **LER ≈ 1.0 为已知偏离**（机制：单位面积产量与作物密度无关）
 
 ### Changed
 - 文档结构由 19 个文件精简为 9 个，每个文件职责单一化
